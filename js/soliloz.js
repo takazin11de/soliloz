@@ -144,7 +144,7 @@ let soliloz = {};
       alert("テキストが不正です。");
       return;
     }
-    alert(text);
+   
     var zip = new Zlib.Zip();
     var new_root=Object.assign({},root);
     new_root.article="A_"+random_name(name_len);
@@ -154,7 +154,7 @@ let soliloz = {};
       article_text:text,
       next_article:root.article
     };
-    console.log(new_article);
+  
 
     var root_jsonic = JSONIC.cnv(new_root);
     zip.addFile(stringToByteArray(root_jsonic), {
