@@ -62,6 +62,9 @@ textarea{
   width: 500px;
   margin: 0 auto;
 }
+a{
+  text-decoration: none;
+}
 
 @media (prefers-color-scheme: dark) {
   body{
