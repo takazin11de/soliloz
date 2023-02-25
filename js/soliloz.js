@@ -1,87 +1,323 @@
-let soliloz = {};
-(function(){
-  "use strict";
-  let export_object = {
-    main: function(){main();},
-    user_data_download: function(){user_data_download();},
-    solilo_download: function(){solilo_download();},
-  };
-  Object.assign(soliloz, export_object);
+class Soliloz{
+  constructor() {
+    this.timeout = 5000;//ms
+    this.name_len = 32;//ms
+    this.root={}; 
+    this.profile={}; 
+    this.article={};
+    this.timeline=new Array(); 
+    this.follow={}; 
+    this.high_priority_queue = new Array();
+    this.low_priority_queue = new Array();
+    this.priority_rate=0.8;
+    this.div_top;
+    this.div_home;
+    this.div_notice;
+    this.num_notice=0;
+    this.old_num_notice=0;
+    this.div_timeline;
+    this.div_tl_end;
+    this.loop_timer;
+    this.loop_interval= 250;//ms
 
-  const timeout = 5000;//ms
-  const name_len = 16;//ms
-  var root={}; 
-  var profile={}; 
-  var article={}; 
-  var follow={}; 
-  async function main(){
-    root = await JSONIC.fetch("data/root.j.css", 5000);
-    if(root==null){
-      regist_user();
+    console.log(this.priority_rate);
+
+    this.draw_header();
+    this.high_priority_queue.push({cmd:"fetch_root",prm:""});
+    this.loop_timer = setInterval(()=>{this.loop(0)}, this.loop_interval);
+  }
+
+  loop(){
+    let command;
+
+    if(Math.random()<this.priority_rate){
+      command = this.high_priority_queue.shift();
+    }else{
+      command = this.low_priority_queue.shift();
+      
+    }
+    if(command==undefined){
       return;
     }
+    //console.log(command.cmd);
+    switch(command.cmd){
+      case "fetch_root":
 
-    draw_home(root);
+        this.fetch_root();
+        break;
+      case "fetch_hot_users":
+        this.fetch_hot_users();
+        break;
+      case "fetch_user":
+        this.fetch_user(command.prm);
+        break;
+      case "fetch_my_article":
+        this.fetch_my_article();
+        break;
+      case "fetch_timeline":
+        this.fetch_timeline();
+        break;
+      default:
+    }
+    this.draw_notice();
+    //this.draw_timeline();
   }
-  function regist_user(){
-    draw_header();
-    add_body('<h2>ユーザー登録</h2>');
-    add_body('<p>ユーザー名</p><label>@<input id="user_name"></input></label><a id="download" class="button" download="soliloz.zip" onclick="soliloz.user_data_download();">OK</a>');
+  fetch_hot_users(){
+    //console.log("aaa "+this.high_priority_queue);
+    if(this.root.hot_users != null && this.root.hot_users != undefined){
+      this.high_priority_queue.push(
+        ... this.root.hot_users.map(user=> ({cmd:"fetch_user",prm:user.name}) ));
+    }
+    //console.log("aaa "+this.high_priority_queue);
+    this.high_priority_queue.push({cmd:"fetch_hot_users",prm:""});
+    //console.log("aaa "+this.high_priority_queue);
   }
 
-  async function draw_home(root){
-    draw_header();
-    add_body('<div class="solio"><h2>ホーム</h2></div>');
-    if(root.profile==null||root.profile==undefined){
+  fetch_root(){
+    
+
+    JSONPIC.fetch("data/root.j.css", 5000).then(
+      (json)=>{
+        this.root=json;
+        this.draw_home();
+        this.high_priority_queue.push({cmd:"fetch_my_article",prm:""});
+        this.high_priority_queue.push({cmd:"fetch_timeline",prm:""});
+        this.high_priority_queue.push({cmd:"fetch_hot_users",prm:""});
+    
+      }).catch(
+        (err)=>{
+          if(err=="timeout"){
+            return;
+          }
+          if(err=="error"){
+            this.regist_user();
+            return;
+          }
+      });
+  }
+  fetch_user(user){
+    JSONPIC.fetch(""+user+"/data/root.j.css", 5000).then(
+      (json)=>{
+        let user_root=json;
+        const fileaddress=""+user+"/data/"+user_root.article+".j.css";
+
+        JSONPIC.fetch(""+user+"/data/"+user_root.article+".j.css", 5000).then(
+          (json)=>{
+            let user_article=json;
+
+            if(this.timeline.find(element=>{return element.filename==fileaddress})==undefined){
+              JSONPIC.fetch(""+user+"/data/"+user_root.profile+".j.css", 5000).then(
+                (json)=>{
+                  let user_profile=json;
+                  this.timeline.push({filename:fileaddress, data:user_article, name:user_profile.name, address:user});
+                  this.sort_timeline();
+                  this.num_notice++;
+                }
+              ).catch();
+            }
+
+            
+
+          }).catch((err)=>{           
+            if(err=="timeout"){
+              return;
+            }
+            if(err=="error"){
+              return;
+            }
+          });
+      }).catch((err)=>{
+          if(err=="timeout"){
+            return;
+          }
+          if(err=="error"){
+            return;
+          }
+      });
+  }
+
+
+  fetch_timeline(){
+    let i;
+    let len=this.timeline.length;
+    console.log("aaa "+len);
+    this.high_priority_queue.push({cmd:"fetch_timeline",prm:""});
+    for(i=0;i<len;i++){
+      let user_article=this.timeline[i].data;
+      let user_name=this.timeline[i].name;
+      let user_address=this.timeline[i].address;
+      let fileaddress=""+user_address+"/data/"+user_article.next_article+".j.css"
+      if(user_address==null){
+        fileaddress="data/"+user_article.next_article+".j.css"
+      }
+      
+      JSONPIC.fetch(fileaddress, 5000).then(
+        
+        (article)=>{
+          if(article.article_text==null){
+            return;
+          }
+          if(this.timeline.find(element=>{return element.filename==fileaddress})==undefined){
+            this.timeline.push({filename:fileaddress, data:article, name:user_name, address:user_address});
+            this.sort_timeline();
+            this.num_notice++;
+          }
+
+        }
+      )
+    }
+  }
+  sort_timeline(){
+    this.timeline.sort((a, b) => {
+      var a;
+      var b;
+      a=a.data.time;
+      b=b.data.time;
+      if(a == null || a == undefined){a=0;}
+      if(b == null || b == undefined){b=0;}
+      return a-b;
+    } );
+  }
+
+  fetch_my_article(){
+    const fileaddress="data/"+this.root.article+".j.css"
+      
+    JSONPIC.fetch(fileaddress, 5000).then(
+      
+      (article)=>{
+        if(article.article_text==null){
+          return;
+        }
+        if(this.timeline.find(element=>{return element.filename==fileaddress})==undefined){
+          this.timeline.push({filename:fileaddress, data:article, name:this.profile.name, address:null});
+          this.sort_timeline();
+          this.num_notice++;
+        }
+
+      }
+    )
+  }
+
+  regist_user(){
+    clearTimeout(this.loop_timer);
+    this.create_ele(this.div_top, "div", "solio", "<h2>ユーザー登録</h2>");
+    this.create_ele(this.div_top, "div", "solio", '<p>ユーザー名</p><label>@<input id="user_name"></input></label><a id="download" class="button" download="soliloz.zip" onclick="soliloz.user_data_download();">OK</a>');
+    this.create_ele(this.div_top, "div", "tl_end","");
+   }
+
+  async draw_home(){
+    this.div_home=this.create_ele(this.div_top, "div", "div_home", "");
+    this.create_ele(this.div_home, "div", "solio", "<h2>ホーム</h2>");
+    
+
+    if(this.root.profile==null||this.root.profile==undefined){
+      console.log("profileデータが不正です。");
       alert("profileデータが不正です。");
       return;
     }
-    profile= await JSONIC.fetch("data/"+root.profile+".j.css", 5000);
+    await JSONPIC.fetch("data/"+this.root.profile+".j.css", 5000).then(
+      (json)=>{
+        this.profile=json;
+        
+      }
+    ).catch(
+      (err)=>{console.log("profileデータが不正です。");alert("profileデータが不正です。");}
+    );
     
-    if(root.article==null||root.article==undefined){
+    if(this.root.article==null||this.root.article==undefined){
+      console.log("articleデータが不正です。");
       alert("articleデータが不正です。");
       return;
     }
-    article= await JSONIC.fetch("data/"+root.article+".j.css", 5000);
+    await JSONPIC.fetch("data/"+this.root.article+".j.css", 5000).then(
+      (json)=>{
+        this.article=json;
+      }
+    ).catch(
+      (err)=>{console.log("articleデータが不正です。");alert("articleデータが不正です。");}
+    );
 
-    if(root.follow==null||root.follow==undefined){
+    if(this.root.follow==null||this.root.follow==undefined){
+      console.log("followデータが不正です。");
       alert("followデータが不正です。");
       return;
     }
-    follow= await JSONIC.fetch("data/"+root.follow+".j.css", 5000);
-
-    add_body('<div class="solio"><p>@'+profile.name+'</p><div class="textarea"><textarea id="text"></textarea></div><div class="button_wrap"><a id="download" class="button" download="soliloz.zip" onclick="soliloz.solilo_download();">つぶやく</a></div></div>');
-
-
-    var i_article;
-    var i; 
-    for(i_article=article,i=0;i<5;i++,i_article= await JSONIC.fetch("data/"+i_article.next_article+".j.css", 5000)){
-      console.log(i_article);
-      if(i_article==null||i_article==undefined||i_article=="timeout"){
-        break;
+    await JSONPIC.fetch("data/"+this.root.follow+".j.css", 5000).then(
+      (json)=>{
+        this.follow=json;
       }
-      if(i_article.next_article==null||i_article.next_article==undefined){
-        break;
-      }
-      if(i_article.article_text==null||i_article.article_text==undefined){
-        continue;
-      }
-      add_body('<div class="solio"><p>@'+profile.name+'</p><p>'+i_article.article_text+'</p></div>');
+    ).catch(
+      (err)=>{console.log("followデータが不正です。");alert("followデータが不正です。");}
+    );
+
+    this.create_ele(this.div_home, "div", "solio_box", '<div class="solio"><p>@'+this.profile.name+'</p><div class="textarea"><textarea id="text"></textarea></div><div class="button_wrap"><a id="download" class="button" download="soliloz.zip" onclick="soliloz.solilo_download();">つぶやく</a></div></div>');
+    this.div_notice=this.create_ele(this.div_home, "div", "div_notice","");
+    this.div_timeline=this.create_ele(this.div_home, "div", "div_timeline","");
+    this.div_tl_end=this.create_ele(this.div_home, "div", "tl_end","");
+    
+
+
+  }
+  draw_notice(){
+    console.log("draw_notice")
+    if(this.div_notice==null||this.div_notice==undefined){
+      return;
     }
-    add_body('<div class="tl_end"></div>');
+    if(this.old_num_notice!=this.num_notice){
+    this.div_notice.innerHTML="";
+    this.old_num_notice=this.num_notice;
+    this.create_ele(this.div_notice, "div", "solio", `<p class="notice" onclick="soliloz.draw_timeline();"><a>${this.num_notice}件の新しい投稿</a></p>`);
+    }
+    if(this.num_notice==0){
+      this.div_notice.innerHTML="";
+    }
+  }
+  reset_notice(){
+    this.old_num_notice=0
+    this.num_notice=0;
+    this.div_notice.innerHTML="";
+  }
+
+  draw_timeline(){
+    this.reset_notice();
+    if(this.div_timeline==null||this.div_timeline==undefined){
+      return;
+    }
+    this.div_timeline.innerHTML="";
+    let i;
+
+    
+    //console.log(this.timeline.length);
+    for(i=this.timeline.length-1;0<=i;i--){
+      //console.log(this.timeline[i].data);
+      let article_text = this.htmlescape(this.timeline[i].data.article_text);
+      let address = this.htmlescape(this.timeline[i].address);
+      if(address==null){
+        address="";
+      }
+      let time = new Date(this.timeline[i].data.time);
+      let timef = `${time.getFullYear()}-${time.getMonth()}-${time.getDate()}  ${time.getHours()}:${time.getMinutes()}`;
+      let name = this.timeline[i].name;
+      this.create_ele(this.div_timeline, "div", "solio", `@${name}<span class="address">${address}</span><span class="date">${timef}</span><br>${article_text}`);
+    }
 
   }
-  function draw_header(){
-    body('');
-    add_body('<div class="solio"><h1>soliloz</h1></div>');
+
+  draw_header(){
+    document.body.innerHTML="";
+    this.div_top = this.create_ele(document.body, "div", "top", "");
+    this.div_header = this.create_ele(this.div_top, "div", "header", "");
+    this.h1 = this.create_ele(this.div_top, "div", "solio", "<h1>soliloz</h1>");
   }
-  function body(x){
-    document.body.innerHTML=x;
+  create_ele(parent, tag, class_name, text){
+    let ele = document.createElement(tag);
+    ele.setAttribute("class", class_name);
+    ele.innerHTML=text;
+    parent.appendChild(ele);
+    return ele;
   }
-  function add_body(x){
-    document.body.innerHTML+=x;
-  }
-  function user_data_download(){
+
+  user_data_download(){
 
     let user_name=document.getElementById('user_name').value.trim();
     if(!user_name || user_name.length == 0){
@@ -92,9 +328,9 @@ let soliloz = {};
     var zip = new Zlib.Zip();
     var root={
       type:"root",
-      article:"A_"+random_name(name_len),
-      follow:"F_"+random_name(name_len),
-      profile:"P_"+random_name(name_len)
+      article:"A_"+this.random_name(this.name_len),
+      follow:"F_"+this.random_name(this.name_len),
+      profile:"P_"+this.random_name(this.name_len)
     };
     var follow={
       type:"follow",
@@ -109,26 +345,27 @@ let soliloz = {};
     };
     var article={
       type:"article",
+      time: Date.now(),
       article_text:null,
       next_article:null
     };
 
 
-    var root_jsonic = JSONIC.cnv(root);
-    zip.addFile(stringToByteArray(root_jsonic), {
-        filename: stringToByteArray('data/root.j.css')
+    var root_jsonpic = JSONPIC.cnv(root);
+    zip.addFile(this.stringToByteArray(root_jsonpic), {
+        filename: this.stringToByteArray('data/root.j.css')
     });
-    var article_jsonic = JSONIC.cnv(article);
-    zip.addFile(stringToByteArray(article_jsonic), {
-        filename: stringToByteArray('data/'+root.article+'.j.css')
+    var article_jsonpic = JSONPIC.cnv(article);
+    zip.addFile(this.stringToByteArray(article_jsonpic), {
+        filename: this.stringToByteArray('data/'+root.article+'.j.css')
     });
-    var follow_jsonic = JSONIC.cnv(follow);
-    zip.addFile(stringToByteArray(follow_jsonic), {
-        filename: stringToByteArray('data/'+root.follow+'.j.css')
+    var follow_jsonpic = JSONPIC.cnv(follow);
+    zip.addFile(this.stringToByteArray(follow_jsonpic), {
+        filename: this.stringToByteArray('data/'+root.follow+'.j.css')
     });
-    var profile_jsonic = JSONIC.cnv(profile);
-    zip.addFile(stringToByteArray(profile_jsonic), {
-      filename: stringToByteArray('data/'+root.profile+'.j.css')
+    var profile_jsonpic = JSONPIC.cnv(profile);
+    zip.addFile(this.stringToByteArray(profile_jsonpic), {
+      filename: this.stringToByteArray('data/'+root.profile+'.j.css')
     });
     
     var blob = new Blob([zip.compress()], { 'type': 'application/zip' });
@@ -137,7 +374,7 @@ let soliloz = {};
     
   }
 
-  function solilo_download(){
+  solilo_download(){
     let text=document.getElementById('text').value;
     let text_trim=text.trim();
     if(!text_trim || text_trim.length == 0){
@@ -146,23 +383,24 @@ let soliloz = {};
     }
    
     var zip = new Zlib.Zip();
-    var new_root=Object.assign({},root);
-    new_root.article="A_"+random_name(name_len);
+    var new_root=Object.assign({},this.root);
+    new_root.article="A_"+this.random_name(this.name_len);
 
     var new_article={
       type:"article",
+      time: Date.now(),
       article_text:text,
-      next_article:root.article
+      next_article:this.root.article
     };
   
 
-    var root_jsonic = JSONIC.cnv(new_root);
-    zip.addFile(stringToByteArray(root_jsonic), {
-        filename: stringToByteArray('data/root.j.css')
+    var root_jsonpic = JSONPIC.cnv(new_root);
+    zip.addFile(this.stringToByteArray(root_jsonpic), {
+        filename: this.stringToByteArray('data/root.j.css')
     });
-    var article_jsonic = JSONIC.cnv(new_article);
-    zip.addFile(stringToByteArray(article_jsonic), {
-        filename: stringToByteArray('data/'+new_root.article+'.j.css')
+    var article_jsonpic = JSONPIC.cnv(new_article);
+    zip.addFile(this.stringToByteArray(article_jsonpic), {
+        filename: this.stringToByteArray('data/'+new_root.article+'.j.css')
     });
 
     var blob = new Blob([zip.compress()], { 'type': 'application/zip' });
@@ -170,13 +408,11 @@ let soliloz = {};
     document.getElementById('download').href = window.URL.createObjectURL(blob);
   }
 
-  function stringToByteArray(str) {
-    var str2=encodeURIComponent(str);//アルファベット、数字、- _ . ! ~ * ' ( )
+  stringToByteArray(str) {
+    var str2=encodeURIComponent(str);
     var array = new Uint8Array(str2.length);
-    
     var i;
     var i2;
-
     for (i = 0, i2 = 0; i < str2.length; i++,i2++) {
       array[i2]=0;
         if(str2.charCodeAt(i)=="%".charCodeAt(0)){
@@ -207,11 +443,11 @@ let soliloz = {};
 
     return array2;
   }
-  function random_name(len) {
+  random_name(len) {
     var i;
     var str=""
     for (i = 0; i < len; i++) {
-        let num=random_int(26+26+10);
+        let num=this.random_int(26+26+10);
         if(num<10){
           str += String.fromCharCode("0".charCodeAt(0)+num);
         }else if(num<10+26){
@@ -223,7 +459,21 @@ let soliloz = {};
     }
     return str;
   }
-  function random_int(max) {
+  random_int(max) {
     return Math.floor(Math.random()*max);
   }
-})();
+  htmlescape(str){
+    try{
+    return str.split("&").join("&amp;")
+    .split("<").join("&lt;")
+    .split(">").join("&gt;")
+    .split('"').join("&quot;")
+    .split(' ').join("&nbsp;")
+    .split('\t').join("&nbsp;")
+  }catch(e){
+    return "";
+  }
+}
+}
+let soliloz;
+
